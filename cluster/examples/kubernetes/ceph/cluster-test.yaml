@@ -37,8 +37,8 @@ spec:
     disable: true
   storage:
     useAllNodes: true
-    useAllDevices: true
-    #deviceFilter:
+    useAllDevices: false
+    deviceFilter: vda3
   healthCheck:
     daemonHealth:
       mon:

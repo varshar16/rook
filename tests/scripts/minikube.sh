@@ -60,10 +60,11 @@ fi
 case "${1:-}" in
   up)
     echo "starting minikube with kubeadm bootstrapper"
-    minikube start --memory="${MEMORY}" -b kubeadm --vm-driver="${VM_DRIVER}"
+    minikube start --memory="${MEMORY}" -b kubeadm
     wait_for_ssh
     # create a link so the default dataDirHostPath will work for this environment
     minikube ssh "sudo mkdir -p /mnt/${DISK}/rook/ && sudo ln -sf /mnt/${DISK}/rook/ /var/lib/"
+    minikube ssh "sudo apt-get update && sudo apt-get install lvm2 -y"
     copy_images "$2"
     ;;
   down)
@@ -88,6 +89,7 @@ case "${1:-}" in
     ;;
   clean)
     minikube delete
+    sudo sgdisk --zap-all /dev/vda3
     ;;
   *)
     echo "usage:" >&2

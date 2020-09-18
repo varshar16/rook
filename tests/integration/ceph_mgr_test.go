@@ -42,16 +42,16 @@ import (
 // **************************************************
 func TestCephMgrSuite(t *testing.T) {
 	if installer.SkipTestSuite(installer.CephTestSuite) {
-		t.Skip()
+		//t.Skip()
 	}
 	// Skip this test suite in master and release builds. If there is an issue
 	// running against Ceph master we don't want to block the official builds.
 	if installer.TestIsOfficialBuild() {
-		t.Skip()
+		//t.Skip()
 	}
 
-	logger.Info("TEMPORARILY disable the mgr test suite until https://github.com/rook/rook/issues/5877 is resolved")
-	t.Skip()
+	//logger.Info("TEMPORARILY disable the mgr test suite until https://github.com/rook/rook/issues/5877 is resolved")
+	//t.Skip()
 
 	s := new(CephMgrSuite)
 	defer func(s *CephMgrSuite) {
@@ -115,7 +115,7 @@ func (suite *CephMgrSuite) AfterTest(suiteName, testName string) {
 }
 
 func (suite *CephMgrSuite) TearDownSuite() {
-	suite.cluster.Teardown()
+	//suite.cluster.Teardown()
 }
 
 func (suite *CephMgrSuite) execute(command []string) (error, string) {
@@ -123,20 +123,62 @@ func (suite *CephMgrSuite) execute(command []string) (error, string) {
 	return suite.cluster.installer.Execute("ceph", orchCommand, suite.namespace)
 }
 
+func (suite *CephMgrSuite) enableRookOrchestrator() error {
+	logger.Info("Enabling Rook orchestrator module: <ceph mgr module enable rook>")
+	err, output := suite.cluster.installer.Execute("ceph", []string{"mgr", "module", "enable", "rook"}, suite.namespace)
+	logger.Infof("output: %s", output)
+	if err != nil {
+		logger.Infof("Not possible to enable rook orchestrator module: %q", err)
+		return err
+	}
+	logger.Info("Setting orchestrator backend to Rook .... <ceph orch set backend rook>")
+	err, output = suite.execute([]string{"set", "backend", "rook"})
+	logger.Infof("output: %s", output)
+	if err != nil {
+		logger.Infof("Not possible to set rook as backend orchestrator module: %q", err)
+	}
+	return err
+}
+
 func (suite *CephMgrSuite) waitForOrchestrationModule() {
 	var err error
+	var orchStatus map[string]string
+
+	err = suite.enableRookOrchestrator()
+	if err != nil {
+		logger.Error("First attemp: Error trying to set Rook orchestrator module")
+	}
+
 	for timeout := 0; timeout < 30; timeout++ {
+		logger.Info("Waiting for rook orchestrator module enabled and ready ...")
 		err, output := suite.execute([]string{"status"})
-		logger.Infof("%s", output)
+		logger.Infof("output: %s", output)
 		if err == nil {
 			logger.Info("Rook Toolbox ready to execute commands")
-			return
+			// Convert string returned to map
+			outputLines := strings.Split(output, "\n")
+			orchStatus = make(map[string]string)
+			for _, setting := range outputLines {
+				s := strings.Split(setting, ":")
+				orchStatus[strings.TrimSpace(strings.ToLower(s[0]))] = strings.TrimSpace(strings.ToLower(s[1]))
+			}
+			if orchStatus["backend"] != "rook" {
+				err = suite.enableRookOrchestrator()
+				if err != nil {
+					continue
+				}
+			}
+			break
+		} else {
+			logger.Info("Rook orchestrator not ready. Enabling again ... ")
+			err = suite.enableRookOrchestrator()
 		}
 		time.Sleep(2 * time.Second)
 	}
 	logger.Error("Giving up waiting for Rook Toolbox to be ready")
 	assert.Nil(suite.T(), err)
 }
+
 func (suite *CephMgrSuite) TestDeviceLs() {
 	logger.Info("Testing .... <ceph orch device ls>")
 	err, device_list := suite.execute([]string{"device", "ls"})
